@@ -1,0 +1,1956 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shift Manager Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel for JSX transformation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Excel Library -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+      
+      body { font-family: 'Inter', sans-serif; }
+      
+      @keyframes fade-in {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
+      
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: #f1f5f9; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen overflow-hidden selection:bg-indigo-100 selection:text-indigo-900">
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel" data-presets="react">
+        const { useState, useEffect, useCallback, useMemo } = React;
+
+        // --- CONSTANTS ---
+        const DAYS_OF_WEEK = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+
+        const PreferenceType = {
+            PREFEERED: 'preferred',
+            UNAVAILABLE: 'unavailable',
+            MANDATORY: 'mandatory',
+        };
+
+        // --- HOOKS ---
+        function useLocalStorage(key, initialValue) {
+            const [storedValue, setStoredValue] = useState(() => {
+                try {
+                    const item = window.localStorage.getItem(key);
+                    return item ? JSON.parse(item) : initialValue;
+                } catch (error) {
+                    console.error(error);
+                    return initialValue;
+                }
+            });
+
+            const setValue = (value) => {
+                try {
+                    const valueToStore = value instanceof Function ? value(storedValue) : value;
+                    setStoredValue(valueToStore);
+                    window.localStorage.setItem(key, JSON.stringify(valueToStore));
+                } catch (error) {
+                    console.error(error);
+                }
+            };
+
+            return [storedValue, setValue];
+        }
+
+        // --- COMPONENTS ---
+
+        // Modal Component
+        const Modal = ({ isOpen, onClose, title, children, footer, size = 'md' }) => {
+            if (!isOpen) return null;
+
+            const sizeClasses = {
+                sm: 'max-w-sm',
+                md: 'max-w-md',
+                lg: 'max-w-lg',
+                xl: 'max-w-xl',
+                full: 'max-w-full m-4',
+            };
+
+            return (
+                <div 
+                    className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in"
+                    onClick={onClose}
+                >
+                    <div 
+                        className={`bg-white rounded-xl shadow-2xl w-full ${sizeClasses[size]} flex flex-col max-h-[90vh] overflow-hidden border border-slate-100`}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <header className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                            <h3 className="text-lg font-bold text-slate-800">{title}</h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200">
+                                <i className="fa-solid fa-times text-lg"></i>
+                            </button>
+                        </header>
+                        <main className="p-6 overflow-y-auto">
+                            {children}
+                        </main>
+                        {footer && (
+                            <footer className="flex justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100">
+                                {footer}
+                            </footer>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // Settings Component (NEW)
+        const Settings = ({ companyName, setCompanyName }) => {
+            return (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 animate-fade-in">
+                    <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-3 pb-4 border-b border-slate-100">
+                        <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600">
+                            <i className="fa-solid fa-cog"></i>
+                        </div>
+                        Impostazioni Generali
+                    </h3>
+                    <div className="max-w-xl space-y-6">
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-2">Nome Azienda / Attività</label>
+                            <input 
+                                type="text" 
+                                value={companyName} 
+                                onChange={(e) => setCompanyName(e.target.value)} 
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                                placeholder="Inserisci il nome della tua attività"
+                            />
+                            <p className="text-xs text-slate-500 mt-2">Questo nome apparirà nella barra laterale e nei report esportati.</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // BarForm Component
+        const BarForm = ({ bar, onSave, onCancel }) => {
+            const [formData, setFormData] = useState({
+                name: '',
+                closedDay: '',
+                shifts: 3,
+                openTime: '09:00',
+                closeTime: '02:00',
+                closurePeriods: [],
+                partialClosures: [], 
+                shiftDefinitions: []
+            });
+            const [newClosure, setNewClosure] = useState({ start: '', end: '' });
+            const [newPartial, setNewPartial] = useState({ day: DAYS_OF_WEEK[0], shifts: [] });
+
+            const calculateDefaultShifts = (shifts, open, close) => {
+                const d1 = new Date(`2000-01-01T${open}`);
+                const d2 = new Date(`2000-01-01T${close}`);
+                if (d2 <= d1) d2.setDate(d2.getDate() + 1);
+                
+                const totalDurationMs = d2.getTime() - d1.getTime();
+                const shiftDurationMs = totalDurationMs / shifts;
+                
+                const definitions = [];
+                
+                for (let i = 0; i < shifts; i++) {
+                    const s = new Date(d1.getTime() + (i * shiftDurationMs));
+                    const e = new Date(d1.getTime() + ((i + 1) * shiftDurationMs));
+                    
+                    definitions.push({
+                        start: s.toTimeString().slice(0, 5),
+                        end: e.toTimeString().slice(0, 5)
+                    });
+                }
+                return definitions;
+            };
+
+            useEffect(() => {
+                if (bar) {
+                    setFormData({
+                        id: bar.id,
+                        name: bar.name || '',
+                        closedDay: bar.closedDay || '',
+                        shifts: bar.shifts || 3,
+                        openTime: bar.openTime || '09:00',
+                        closeTime: bar.closeTime || '02:00',
+                        closurePeriods: bar.closurePeriods || [],
+                        partialClosures: bar.partialClosures || [],
+                        shiftDefinitions: bar.shiftDefinitions || calculateDefaultShifts(bar.shifts, bar.openTime, bar.closeTime)
+                    });
+                } else {
+                    setFormData(prev => ({
+                        ...prev,
+                        shiftDefinitions: calculateDefaultShifts(prev.shifts || 3, prev.openTime || '09:00', prev.closeTime || '02:00')
+                    }));
+                }
+            }, [bar]);
+
+            const handleRecalculateShifts = () => {
+                const defs = calculateDefaultShifts(formData.shifts || 3, formData.openTime || '09:00', formData.closeTime || '02:00');
+                setFormData(prev => ({ ...prev, shiftDefinitions: defs }));
+            };
+
+            const handleChange = (e) => {
+                const { name, value } = e.target;
+                
+                if (name === 'shifts') {
+                    const newShifts = parseInt(value);
+                    const defs = calculateDefaultShifts(newShifts, formData.openTime || '09:00', formData.closeTime || '02:00');
+                    setFormData(prev => ({ ...prev, shifts: newShifts, shiftDefinitions: defs }));
+                } else {
+                    setFormData(prev => ({ ...prev, [name]: value }));
+                }
+            };
+
+            const handleShiftDefinitionChange = (index, field, value) => {
+                const newDefs = [...(formData.shiftDefinitions || [])];
+                if (newDefs[index]) {
+                    newDefs[index][field] = value;
+                    setFormData(prev => ({ ...prev, shiftDefinitions: newDefs }));
+                }
+            };
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave(formData);
+            };
+
+            const addClosurePeriod = () => {
+                if (newClosure.start && newClosure.end && newClosure.start <= newClosure.end) {
+                    setFormData(prev => ({...prev, closurePeriods: [...(prev.closurePeriods || []), newClosure]}));
+                    setNewClosure({ start: '', end: '' });
+                } else {
+                    alert('La data di inizio deve essere precedente o uguale alla data di fine.');
+                }
+            };
+
+            const removeClosurePeriod = (index) => {
+                setFormData(prev => ({ ...prev, closurePeriods: (prev.closurePeriods || []).filter((_, i) => i !== index) }));
+            };
+
+            const toggleNewPartialShift = (shiftIndex) => {
+                setNewPartial(prev => {
+                    const shifts = prev.shifts.includes(shiftIndex) 
+                        ? prev.shifts.filter(s => s !== shiftIndex) 
+                        : [...prev.shifts, shiftIndex];
+                    return { ...prev, shifts };
+                });
+            };
+
+            const addPartialClosure = () => {
+                if (newPartial.shifts.length === 0) return;
+                setFormData(prev => {
+                    const existing = prev.partialClosures || [];
+                    const filtered = existing.filter(p => p.day !== newPartial.day);
+                    return { 
+                        ...prev, 
+                        partialClosures: [...filtered, { day: newPartial.day, closedShiftIndexes: newPartial.shifts }] 
+                    };
+                });
+                setNewPartial({ day: DAYS_OF_WEEK[0], shifts: [] });
+            };
+
+            const removePartialClosure = (day) => {
+                setFormData(prev => ({ 
+                    ...prev, 
+                    partialClosures: (prev.partialClosures || []).filter(p => p.day !== day) 
+                }));
+            };
+
+            return (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-3 pb-4 border-b border-slate-100">
+                        <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600">
+                            <i className="fa-solid fa-store"></i>
+                        </div>
+                        {bar ? 'Modifica Locale' : 'Nuovo Locale'}
+                    </h3>
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <div>
+                                <label className="block text-xs font-semibold uppercase text-slate-500 mb-2 tracking-wide">Nome Locale</label>
+                                <input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all" required placeholder="Es. Lounge Bar" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase text-slate-500 mb-2 tracking-wide">Giorno di Chiusura (Totale)</label>
+                                <select name="closedDay" value={formData.closedDay} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                                    <option value="">Nessuna</option>
+                                    {DAYS_OF_WEEK.map(day => <option key={day} value={day}>{day}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase text-slate-500 mb-2 tracking-wide">Struttura Turni</label>
+                                <select name="shifts" value={formData.shifts} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                                    <option value="3">3 Turni (Mattina/Pomeriggio/Sera)</option>
+                                    <option value="2">2 Turni (Unico/Spezzato)</option>
+									<option value="1">1 Turno (Serale)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase text-slate-500 mb-2 tracking-wide">Orario Apertura (Rif.)</label>
+                                <input type="time" name="openTime" value={formData.openTime} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase text-slate-500 mb-2 tracking-wide">Orario Chiusura (Rif.)</label>
+                                <input type="time" name="closeTime" value={formData.closeTime} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                <i className="fa-solid fa-calendar-minus"></i> Chiusure Parziali Ricorrenti
+                            </h4>
+                            <div className="flex flex-wrap items-end gap-3 mb-4">
+                                <div>
+                                    <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Giorno</label>
+                                    <select value={newPartial.day} onChange={e => setNewPartial({...newPartial, day: e.target.value})} className="p-2 border border-slate-300 rounded text-sm focus:border-indigo-500 outline-none">
+                                        {DAYS_OF_WEEK.map(day => <option key={day} value={day}>{day}</option>)}
+                                    </select>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {Array.from({length: formData.shifts}).map((_, idx) => (
+                                        <label key={idx} className={`cursor-pointer px-3 py-2 rounded text-xs font-medium border transition-colors ${newPartial.shifts.includes(idx) ? 'bg-rose-100 border-rose-300 text-rose-700' : 'bg-white border-slate-300 text-slate-600'}`}>
+                                            <input type="checkbox" className="hidden" checked={newPartial.shifts.includes(idx)} onChange={() => toggleNewPartialShift(idx)} />
+                                            Chiudi T{idx+1}
+                                        </label>
+                                    ))}
+                                </div>
+                                <button type="button" onClick={addPartialClosure} className="px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm">
+                                    <i className="fa-solid fa-plus"></i>
+                                </button>
+                            </div>
+                            
+                            {formData.partialClosures && formData.partialClosures.length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                    {formData.partialClosures.map((pc, idx) => (
+                                        <div key={idx} className="bg-white px-3 py-2 rounded border border-slate-200 shadow-sm flex items-center gap-2 text-sm">
+                                            <span className="font-bold text-slate-700">{pc.day}:</span>
+                                            <span className="text-rose-600 text-xs">Chiuso {pc.closedShiftIndexes.map(i => `T${i+1}`).join(', ')}</span>
+                                            <button type="button" onClick={() => removePartialClosure(pc.day)} className="ml-2 text-slate-400 hover:text-rose-500">
+                                                <i className="fa-solid fa-times"></i>
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <div className="flex justify-between items-center mb-4">
+                                <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                    <i className="fa-solid fa-clock"></i> Configurazione Orari Turni
+                                </h4>
+                                <button type="button" onClick={handleRecalculateShifts} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium bg-indigo-50 px-2 py-1 rounded">
+                                    <i className="fa-solid fa-rotate mr-1"></i> Ricalcola Standard
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {formData.shiftDefinitions?.map((def, idx) => (
+                                    <div key={idx} className="bg-white p-3 rounded shadow-sm border border-slate-200">
+                                        <label className="text-[10px] uppercase font-bold text-slate-400 mb-2 block">
+                                            Turno {idx + 1}
+                                            {formData.shifts === 3 ? (idx === 0 ? ' (Mattina)' : idx === 1 ? ' (Pom.)' : ' (Sera)') : ''}
+                                        </label>
+                                        <div className="flex items-center gap-2">
+                                            <div className="flex-1">
+                                                <span className="text-[10px] text-slate-500 block">Inizio</span>
+                                                <input 
+                                                    type="time" 
+                                                    value={def.start} 
+                                                    onChange={(e) => handleShiftDefinitionChange(idx, 'start', e.target.value)}
+                                                    className="w-full p-1.5 border border-slate-300 rounded text-sm font-mono focus:border-indigo-500 outline-none" 
+                                                />
+                                            </div>
+                                            <i className="fa-solid fa-arrow-right text-slate-300 text-xs mt-3"></i>
+                                            <div className="flex-1">
+                                                <span className="text-[10px] text-slate-500 block">Fine</span>
+                                                <input 
+                                                    type="time" 
+                                                    value={def.end} 
+                                                    onChange={(e) => handleShiftDefinitionChange(idx, 'end', e.target.value)}
+                                                    className="w-full p-1.5 border border-slate-300 rounded text-sm font-mono focus:border-indigo-500 outline-none" 
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                <i className="fa-solid fa-umbrella-beach"></i> Chiusure Straordinarie / Ferie Locale
+                            </h4>
+                            <div className="space-y-3 mb-3">
+                                {formData.closurePeriods?.map((period, index) => (
+                                    <div key={index} className="flex items-center gap-3 bg-white p-2 px-3 rounded border border-slate-200 shadow-sm">
+                                        <div className="text-sm text-slate-600">
+                                            Dal <span className="font-semibold text-slate-800">{period.start}</span> al <span className="font-semibold text-slate-800">{period.end}</span>
+                                        </div>
+                                        <button type="button" onClick={() => removeClosurePeriod(index)} className="ml-auto text-rose-500 hover:text-rose-700 hover:bg-rose-50 p-1 rounded transition-colors">
+                                            <i className="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex items-end gap-3">
+                                <div>
+                                    <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Inizio</label>
+                                    <input type="date" value={newClosure.start} onChange={e => setNewClosure({...newClosure, start: e.target.value})} className="p-2 border border-slate-300 rounded text-sm focus:border-indigo-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Fine</label>
+                                    <input type="date" value={newClosure.end} onChange={e => setNewClosure({...newClosure, end: e.target.value})} className="p-2 border border-slate-300 rounded text-sm focus:border-indigo-500 outline-none" />
+                                </div>
+                                <button type="button" onClick={addClosurePeriod} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow-sm shadow-indigo-200">
+                                    <i className="fa-solid fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="pt-4 flex gap-3 border-t border-slate-100">
+                            <button type="submit" className="px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all transform hover:-translate-y-0.5 flex items-center gap-2">
+                                <i className="fa-solid fa-save"></i> Salva Locale
+                            </button>
+                            {bar && (
+                                <button type="button" onClick={onCancel} className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 font-medium rounded-lg hover:bg-slate-50 transition-colors">
+                                    Annulla
+                                </button>
+                            )}
+                        </div>
+                    </form>
+                </div>
+            );
+        };
+
+        // Bars Component
+        const Bars = ({ bars, onSave, onDelete }) => {
+            const [editingBar, setEditingBar] = useState(null);
+
+            const handleSave = (bar) => {
+                onSave(bar);
+                setEditingBar(null);
+            }
+
+            return (
+                <div className="space-y-8 animate-fade-in">
+                    <BarForm bar={editingBar} onSave={handleSave} onCancel={() => setEditingBar(null)} />
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        {bars.map(bar => (
+                            <div key={bar.id} className="group bg-white rounded-xl shadow-sm hover:shadow-xl border border-slate-200 hover:border-indigo-100 transition-all duration-300 overflow-hidden">
+                                <div className="h-2 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+                                <div className="p-6">
+                                    <div className="flex justify-between items-start mb-4">
+                                        <h4 className="text-lg font-bold text-slate-800 group-hover:text-indigo-700 transition-colors">{bar.name}</h4>
+                                        <span className="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">{bar.shifts} Turni</span>
+                                    </div>
+                                    <div className="space-y-2 text-sm text-slate-500">
+                                        <p className="flex items-center gap-3">
+                                            <span className="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center text-slate-400"><i className="fa-solid fa-clock"></i></span>
+                                            <span>{bar.openTime} - {bar.closeTime}</span>
+                                        </p>
+                                        <p className="flex items-center gap-3">
+                                            <span className="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center text-slate-400"><i className="fa-solid fa-calendar-times"></i></span>
+                                            <span>Chiusura: <span className="font-medium text-slate-700">{bar.closedDay || 'Nessuna'}</span></span>
+                                        </p>
+                                        {/* Partial Closures Display */}
+                                        {bar.partialClosures && bar.partialClosures.length > 0 && (
+                                            <div className="mt-2 text-xs bg-rose-50 text-rose-700 p-2 rounded border border-rose-100">
+                                                <p className="font-bold mb-1">Chiusure Parziali:</p>
+                                                {bar.partialClosures.map((pc, i) => (
+                                                    <div key={i} className="flex justify-between">
+                                                        <span>{pc.day}:</span>
+                                                        <span>{pc.closedShiftIndexes.map(idx => `T${idx+1}`).join(', ')} Off</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {bar.shiftDefinitions && bar.shiftDefinitions.length > 0 && (
+                                            <div className="mt-2 pt-2 border-t border-slate-100">
+                                                <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Turni</p>
+                                                <div className="grid grid-cols-1 gap-1">
+                                                    {bar.shiftDefinitions.map((def, i) => (
+                                                        <div key={i} className="flex justify-between text-xs text-slate-600 bg-slate-50 px-2 py-0.5 rounded">
+                                                            <span>T{i+1}:</span>
+                                                            <span className="font-mono">{def.start}-{def.end}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="mt-6 flex gap-2 pt-4 border-t border-slate-100">
+                                        <button onClick={() => setEditingBar(bar)} className="flex-1 py-2 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 font-medium text-sm transition-colors flex items-center justify-center gap-2">
+                                            <i className="fa-solid fa-pen"></i> Modifica
+                                        </button>
+                                        <button onClick={() => onDelete(bar.id)} className="flex-1 py-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 font-medium text-sm transition-colors flex items-center justify-center gap-2">
+                                            <i className="fa-solid fa-trash"></i> Elimina
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // EmployeeForm Component
+        const EmployeeForm = ({ employee, bars, roles, onSave, onCancel }) => {
+            const initialFormData = {
+                name: '',
+                maxHours: 160,
+                restDay: '',
+                restDaysPerWeek: 1,
+                enabledBarIds: [],
+                preferredBarIds: [],
+                roleId: null,
+                holidays: [],
+                preferences: [],
+                requiresPairing: false,
+            };
+
+            const [formData, setFormData] = useState(initialFormData);
+            const [newHoliday, setNewHoliday] = useState({ start: '', end: '' });
+
+            useEffect(() => {
+                if (employee) {
+                    setFormData({
+                        id: employee.id,
+                        name: employee.name,
+                        maxHours: employee.maxHours,
+                        restDay: employee.restDay,
+                        restDaysPerWeek: employee.restDaysPerWeek,
+                        enabledBarIds: employee.enabledBarIds,
+                        preferredBarIds: employee.preferredBarIds || [],
+                        roleId: employee.roleId,
+                        holidays: employee.holidays || [],
+                        preferences: employee.preferences || [],
+                        requiresPairing: employee.requiresPairing || false,
+                    });
+                } else {
+                    setFormData(initialFormData);
+                }
+            }, [employee]);
+
+            const handleChange = (e) => {
+                const { name, value, type } = e.target;
+                if (type === 'checkbox') {
+                    const { checked } = e.target;
+                    setFormData(prev => ({...prev, [name]: checked }));
+                    return;
+                }
+                let parsedValue = value;
+                if (name === 'maxHours' || name === 'restDaysPerWeek') {
+                    parsedValue = parseInt(value) || 0;
+                } else if (name === 'roleId') {
+                    const roleId = value ? parseInt(value) : null;
+                    const role = roles.find(r => r.id === roleId);
+                    const requiresPairing = role && role.id === 1; 
+                    setFormData(prev => ({
+                        ...prev,
+                        roleId: roleId,
+                        requiresPairing: requiresPairing,
+                    }));
+                    return;
+                }
+                setFormData(prev => ({ ...prev, [name]: parsedValue }));
+            };
+            
+            const handleBarCheck = (barId) => {
+                setFormData(prev => {
+                    const enabledBarIds = prev.enabledBarIds?.includes(barId)
+                        ? prev.enabledBarIds.filter(id => id !== barId)
+                        : [...(prev.enabledBarIds || []), barId];
+                    return { ...prev, enabledBarIds };
+                });
+            };
+
+            const toggleBarPreference = (barId, e) => {
+                e.preventDefault();
+                setFormData(prev => {
+                    const current = prev.preferredBarIds || [];
+                    const newPrefs = current.includes(barId) ? current.filter(id => id !== barId) : [...current, barId];
+                    return { ...prev, preferredBarIds: newPrefs };
+                });
+            };
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave(formData);
+            };
+
+            const addHolidayPeriod = () => {
+                if (newHoliday.start && newHoliday.end && newHoliday.start <= newHoliday.end) {
+                    setFormData(prev => ({...prev, holidays: [...(prev.holidays || []), newHoliday]}));
+                    setNewHoliday({ start: '', end: '' });
+                } else {
+                    alert('La data di inizio deve essere precedente o uguale alla data di fine.');
+                }
+            };
+
+            const removeHolidayPeriod = (index) => {
+                setFormData(prev => ({ ...prev, holidays: (prev.holidays || []).filter((_, i) => i !== index) }));
+            };
+
+            const togglePreference = (day, shiftIndex) => {
+                const currentPref = formData.preferences?.find(p => p.day === day && p.shiftIndex === shiftIndex);
+                let newPreferences;
+                if (!currentPref) {
+                    newPreferences = [...(formData.preferences || []), { day, shiftIndex, type: PreferenceType.PREFEERED }];
+                } else {
+                    switch (currentPref.type) {
+                        case PreferenceType.PREFEERED: newPreferences = formData.preferences?.map(p => p === currentPref ? { ...p, type: PreferenceType.UNAVAILABLE } : p); break;
+                        case PreferenceType.UNAVAILABLE: newPreferences = formData.preferences?.map(p => p === currentPref ? { ...p, type: PreferenceType.MANDATORY } : p); break;
+                        case PreferenceType.MANDATORY: newPreferences = formData.preferences?.filter(p => p !== currentPref); break;
+                        default: newPreferences = formData.preferences;
+                    }
+                }
+                setFormData(prev => ({...prev, preferences: newPreferences}));
+            }
+
+            const getPreferenceStyle = (day, shiftIndex) => {
+                const pref = formData.preferences?.find(p => p.day === day && p.shiftIndex === shiftIndex);
+                if (!pref) return { bg: 'bg-slate-50', text: 'text-slate-300', icon: 'fa-circle' };
+                switch (pref.type) {
+                    case PreferenceType.PREFEERED: return { bg: 'bg-emerald-100', text: 'text-emerald-600', icon: 'fa-thumbs-up' };
+                    case PreferenceType.UNAVAILABLE: return { bg: 'bg-rose-100', text: 'text-rose-600', icon: 'fa-ban' };
+                    case PreferenceType.MANDATORY: return { bg: 'bg-blue-100', text: 'text-blue-600', icon: 'fa-star' };
+                    default: return { bg: 'bg-slate-50', text: 'text-slate-300', icon: 'fa-circle' };
+                }
+            }
+
+            return (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-3 pb-4 border-b border-slate-100">
+                        <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600">
+                            <i className="fa-solid fa-user-gear"></i>
+                        </div>
+                        {employee ? 'Scheda Dipendente' : 'Nuovo Dipendente'}
+                    </h3>
+                    <form onSubmit={handleSubmit} className="space-y-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <div>
+                                <label className="block text-xs font-semibold uppercase text-slate-500 mb-2 tracking-wide">Nominativo</label>
+                                <input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" required placeholder="Es. Mario Rossi" />
+                            </div>
+                            <div>
+                                    <label className="block text-xs font-semibold uppercase text-slate-500 mb-2 tracking-wide">Target Ore Mensili</label>
+                                <input type="number" name="maxHours" value={formData.maxHours} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" required />
+                            </div>
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase text-slate-500 mb-2 tracking-wide">Ruolo</label>
+                                <select name="roleId" value={formData.roleId || ''} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none">
+                                    <option value="">Nessun Ruolo</option>
+                                    {roles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase text-slate-500 mb-2 tracking-wide">Giorno Riposo Fisso</label>
+                                <select name="restDay" value={formData.restDay} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none">
+                                    <option value="">Variabile</option>
+                                    {DAYS_OF_WEEK.map(day => <option key={day} value={day}>{day}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                    <label className="block text-xs font-semibold uppercase text-slate-500 mb-2 tracking-wide">Riposi a Settimana</label>
+                                <select name="restDaysPerWeek" value={formData.restDaysPerWeek} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none">
+                                    <option value="1">1 Giorno</option>
+                                    <option value="2">2 Giorni</option>
+                                </select>
+                            </div>
+                            <div className="flex items-end">
+                                <label className={`w-full flex items-center gap-3 cursor-pointer p-3 border rounded-lg transition-colors ${formData.requiresPairing ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                                    <input type="checkbox" name="requiresPairing" checked={!!formData.requiresPairing} onChange={handleChange} className="h-5 w-5 rounded text-amber-600 focus:ring-amber-500" />
+                                    <div>
+                                        <span className="block font-semibold text-slate-700">Junior / Apprendista</span>
+                                        <span className="text-xs text-slate-500">Richiede affiancamento senior</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* Holiday Section Added Here */}
+                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                <i className="fa-solid fa-plane-departure"></i> Pianificazione Ferie / Assenze
+                            </h4>
+                            <div className="space-y-3 mb-3">
+                                {formData.holidays?.map((holiday, index) => (
+                                    <div key={index} className="flex items-center gap-3 bg-white p-2 px-3 rounded border border-slate-200 shadow-sm">
+                                        <div className="text-sm text-slate-600">
+                                            Dal <span className="font-semibold text-slate-800">{holiday.start}</span> al <span className="font-semibold text-slate-800">{holiday.end}</span>
+                                        </div>
+                                        <button type="button" onClick={() => removeHolidayPeriod(index)} className="ml-auto text-rose-500 hover:text-rose-700 hover:bg-rose-50 p-1 rounded transition-colors">
+                                            <i className="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
+                                ))}
+                                {(!formData.holidays || formData.holidays.length === 0) && (
+                                    <p className="text-xs text-slate-400 italic">Nessun periodo di ferie programmato.</p>
+                                )}
+                            </div>
+                            <div className="flex items-end gap-3 pt-2 border-t border-slate-200">
+                                <div>
+                                    <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Inizio</label>
+                                    <input type="date" value={newHoliday.start} onChange={e => setNewHoliday({...newHoliday, start: e.target.value})} className="p-2 border border-slate-300 rounded text-sm focus:border-indigo-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Fine</label>
+                                    <input type="date" value={newHoliday.end} onChange={e => setNewHoliday({...newHoliday, end: e.target.value})} className="p-2 border border-slate-300 rounded text-sm focus:border-indigo-500 outline-none" />
+                                </div>
+                                <button type="button" onClick={addHolidayPeriod} className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 shadow-sm shadow-emerald-200">
+                                    <i className="fa-solid fa-plus"></i> Aggiungi
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-semibold uppercase text-slate-500 mb-3 tracking-wide">Locali Abilitati e Preferenze</label>
+                            <div className="flex flex-wrap gap-3">
+                                {bars.map(bar => (
+                                    <div key={bar.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${formData.enabledBarIds?.includes(bar.id) ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                                            <input type="checkbox" checked={formData.enabledBarIds?.includes(bar.id)} onChange={() => handleBarCheck(bar.id)} className="hidden" />
+                                            {formData.enabledBarIds?.includes(bar.id) ? <i className="fa-solid fa-check-circle"></i> : <i className="fa-regular fa-circle"></i>}
+                                            <span className="font-medium">{bar.name}</span>
+                                        </label>
+                                        {formData.enabledBarIds?.includes(bar.id) && (
+                                            <button 
+                                                type="button"
+                                                onClick={(e) => toggleBarPreference(bar.id, e)}
+                                                className={`ml-2 w-6 h-6 flex items-center justify-center rounded-full transition-transform hover:scale-110 ${formData.preferredBarIds?.includes(bar.id) ? 'text-amber-400 hover:text-amber-500' : 'text-slate-300 hover:text-amber-300'}`}
+                                                title={formData.preferredBarIds?.includes(bar.id) ? "Preferito" : "Segna come preferito"}
+                                            >
+                                                <i className="fa-solid fa-star"></i>
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                                <label className="block text-xs font-semibold uppercase text-slate-500 mb-3 tracking-wide">Disponibilità Settimanale</label>
+                            <div className="p-4 border border-slate-200 rounded-xl bg-slate-50/50">
+                                <div className="flex justify-end gap-4 mb-3 text-xs font-medium text-slate-500">
+                                    <div className="flex items-center gap-1"><i className="fa-solid fa-circle text-slate-300"></i> Standard</div>
+                                    <div className="flex items-center gap-1"><i className="fa-solid fa-thumbs-up text-emerald-500"></i> Preferito</div>
+                                    <div className="flex items-center gap-1"><i className="fa-solid fa-ban text-rose-500"></i> No</div>
+                                    <div className="flex items-center gap-1"><i className="fa-solid fa-star text-blue-500"></i> Obbligo</div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-center text-sm border-separate border-spacing-1">
+                                        <thead>
+                                            <tr>
+                                                <th></th>
+                                                {DAYS_OF_WEEK.map(day => <th key={day} className="font-semibold text-slate-600 pb-2">{day.substring(0,3)}</th>)}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {['Mattina', 'Pomeriggio', 'Sera'].map((shiftLabel, shiftIdx) => (
+                                                <tr key={shiftIdx}>
+                                                    <td className="text-left font-medium text-slate-700 pr-2">{shiftLabel}</td>
+                                                    {DAYS_OF_WEEK.map(day => {
+                                                        const style = getPreferenceStyle(day, shiftIdx);
+                                                        return (
+                                                            <td key={day}>
+                                                                <button 
+                                                                    type="button" 
+                                                                    onClick={() => togglePreference(day, shiftIdx)} 
+                                                                    className={`w-full h-9 rounded-md flex items-center justify-center text-sm ${style.bg} ${style.text} transition-all hover:brightness-95`}
+                                                                >
+                                                                    <i className={`fa-solid ${style.icon}`}></i>
+                                                                </button>
+                                                            </td>
+                                                        )
+                                                    })}
+                                                </tr>
+                                            ))}                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="pt-4 flex gap-3 border-t border-slate-100">
+                            <button type="submit" className="px-6 py-2.5 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all transform hover:-translate-y-0.5 flex items-center gap-2">
+                                <i className="fa-solid fa-save"></i> Salva Dipendente
+                            </button>
+                            {employee && (
+                                <button type="button" onClick={onCancel} className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 font-medium rounded-lg hover:bg-slate-50 transition-colors">
+                                    Annulla
+                                </button>
+                            )}
+                        </div>
+                    </form>
+                </div>
+            );
+        };
+
+        // Employees Component
+        const Employees = ({ employees, bars, roles, onSave, onDelete }) => {
+            const [editingEmployee, setEditingEmployee] = useState(null);
+            
+            const handleSave = (employee) => {
+                onSave(employee);
+                setEditingEmployee(null);
+            }
+
+            return (
+                <div className="space-y-8 animate-fade-in">
+                    <EmployeeForm
+                        employee={editingEmployee}
+                        bars={bars}
+                        roles={roles}
+                        onSave={handleSave}
+                        onCancel={() => setEditingEmployee(null)}
+                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        {employees.map(employee => {
+                            const role = roles.find(r => r.id === employee.roleId);
+                            return (
+                                <div key={employee.id} className="group bg-white rounded-xl shadow-sm hover:shadow-xl border border-slate-200 hover:border-emerald-100 transition-all duration-300 overflow-hidden flex flex-col">
+                                    <div className="p-6 flex-grow">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <h4 className="text-lg font-bold text-slate-800 flex items-center gap-2 group-hover:text-emerald-700 transition-colors">
+                                                    {employee.name}
+                                                    {employee.requiresPairing && <i className="fa-solid fa-user-graduate text-amber-500 text-sm" title="Richiede affiancamento"></i>}
+                                                </h4>
+                                                <span className="text-xs font-medium text-slate-500">{role?.name || 'Nessun ruolo'}</span>
+                                            </div>
+                                            <span className="bg-emerald-50 text-emerald-700 text-xs font-bold px-2.5 py-1 rounded-lg">{employee.maxHours}h</span>
+                                        </div>
+                                        <div className="space-y-2 mt-4">
+                                            <p className="text-sm text-slate-600 flex items-center gap-2">
+                                                <i className="fa-solid fa-bed text-slate-400 w-5"></i>
+                                                Riposo: <span className="font-medium">{employee.restDay || 'Variabile'}</span>
+                                            </p>
+                                            {employee.holidays && employee.holidays.length > 0 && (
+                                                 <div className="text-xs bg-rose-50 text-rose-600 p-2 rounded border border-rose-100 mt-2">
+                                                    <strong className="block mb-1">Ferie:</strong>
+                                                    {employee.holidays.slice(0, 2).map((h, i) => (
+                                                        <div key={i}>{h.start} - {h.end}</div>
+                                                    ))}
+                                                    {employee.holidays.length > 2 && <span>+{employee.holidays.length - 2} altri</span>}
+                                                </div>
+                                            )}
+                                            <div className="flex gap-1 flex-wrap mt-2">
+                                                {employee.enabledBarIds.map(bid => {
+                                                    const b = bars.find(bar => bar.id === bid);
+                                                    return b ? (
+                                                        <span key={bid} className={`text-[10px] px-2 py-0.5 rounded border flex items-center gap-1 ${employee.preferredBarIds?.includes(bid) ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>
+                                                            {b.name}
+                                                            {employee.preferredBarIds?.includes(bid) && <i className="fa-solid fa-star text-[8px]"></i>}
+                                                        </span>
+                                                    ) : null
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-auto flex gap-2 p-4 border-t border-slate-100 bg-slate-50/50">
+                                        <button onClick={() => setEditingEmployee(employee)} className="flex-1 py-1.5 bg-white border border-slate-200 text-slate-600 rounded hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200 text-sm transition-all">
+                                            <i className="fa-solid fa-pen"></i>
+                                        </button>
+                                        <button onClick={() => onDelete(employee.id)} className="flex-1 py-1.5 bg-white border border-slate-200 text-slate-600 rounded hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 text-sm transition-all">
+                                            <i className="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        // Configuration Component
+        const Configuration = ({ requirements, bars, onSaveRequirement, onDeleteRequirement }) => {
+            const [newReqBar, setNewReqBar] = useState(bars[0]?.id.toString() || '');
+            const [newReqDay, setNewReqDay] = useState(DAYS_OF_WEEK[0]);
+            
+            const handleSaveRequirement = (req) => { onSaveRequirement(req); };
+            const selectedBarForNewReq = bars.find(b => b.id === parseInt(newReqBar));
+
+            return (
+                <div className="space-y-8 animate-fade-in">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-3 pb-4 border-b border-slate-100">
+                            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                                <i className="fa-solid fa-sliders"></i>
+                            </div>
+                            Configurazione Fabbisogno
+                        </h3>
+                        
+                        <div className="p-5 border border-blue-100 rounded-xl bg-blue-50/50 mb-8">
+                            <h4 className="font-bold text-blue-900 mb-4 text-sm uppercase tracking-wide">Definisci Standard</h4>
+                            <div className="flex flex-wrap items-end gap-4">
+                                <div className="flex-1 min-w-[200px]">
+                                    <label className="text-xs font-semibold text-blue-700 mb-1 block">Locale</label>
+                                    <select value={newReqBar} onChange={e => setNewReqBar(e.target.value)} className="w-full p-2.5 bg-white border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" disabled={bars.length === 0}>
+                                        {bars.map(bar => <option key={bar.id} value={bar.id}>{bar.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="flex-1 min-w-[200px]">
+                                    <label className="text-xs font-semibold text-blue-700 mb-1 block">Giorno</label>
+                                    <select value={newReqDay} onChange={e => setNewReqDay(e.target.value)} className="w-full p-2.5 bg-white border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                        {DAYS_OF_WEEK.map(day => <option key={day} value={day}>{day}</option>)}
+                                    </select>
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        if(newReqBar && newReqDay) {
+                                            const defaultPersonnel = selectedBarForNewReq?.shifts === 2 ? [1,1,0] : [1,1,1];
+                                            onSaveRequirement({id: `${newReqBar}-${newReqDay}`, barId: parseInt(newReqBar), day: newReqDay, personnel: defaultPersonnel, waiters: [0,0,0]});
+                                        }
+                                    }}
+                                    className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all disabled:opacity-50 disabled:shadow-none"
+                                    disabled={!newReqBar || requirements.some(r => r.id === `${newReqBar}-${newReqDay}`)}
+                                >
+                                    {requirements.some(r => r.id === `${newReqBar}-${newReqDay}`) ? 'Già Configurato' : 'Aggiungi Regola'}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="grid gap-4">
+                            {requirements.sort((a,b) => a.barId - b.barId || DAYS_OF_WEEK.indexOf(a.day) - DAYS_OF_WEEK.indexOf(b.day)).map(req => {
+                                const bar = bars.find(b => b.id === req.barId);
+                                if (!bar) return null;
+                                const shifts = bar.shifts === 2 ? ['Turno 1', 'Turno 2'] : ['Mattina', 'Pomeriggio', 'Sera'];
+                                return (
+                                    <div key={req.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                                        <div className="flex items-center gap-4 min-w-[200px]">
+                                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold">{req.day.substring(0,2)}</div>
+                                            <div>
+                                                <h5 className="font-bold text-slate-800">{bar.name}</h5>
+                                                <span className="text-sm text-slate-500">{req.day}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex-grow grid grid-cols-1 sm:grid-cols-3 gap-4 w-full md:w-auto">
+                                            {shifts.map((label, index) => {
+                                                if (bar.shifts === 2 && index === 2) return null;
+                                                return (
+                                                    <div key={index} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                                        <span className="text-[10px] uppercase font-bold text-slate-400 block mb-2">{label}</span>
+                                                        <div className="flex gap-4">
+                                                            <div>
+                                                                <span className="text-xs text-slate-600 mr-2">Tot</span>
+                                                                <input 
+                                                                    type="number" min="0" value={req.personnel[index]} 
+                                                                    onChange={e => {
+                                                                        const newPersonnel = [...req.personnel];
+                                                                        newPersonnel[index] = Math.max(0, parseInt(e.target.value) || 0);
+                                                                        const newWaiters = [...(req.waiters || [0,0,0])];
+                                                                        if (newWaiters[index] > newPersonnel[index]) {
+                                                                            newWaiters[index] = newPersonnel[index];
+                                                                        }
+                                                                        handleSaveRequirement({...req, personnel: newPersonnel, waiters: newWaiters});
+                                                                    }}
+                                                                    className="w-12 text-center p-1 border rounded text-sm font-bold bg-white"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-xs text-slate-600 mr-2">Cam</span>
+                                                                <input 
+                                                                    type="number" min="0" max={req.personnel[index]} value={req.waiters?.[index] || 0}
+                                                                    onChange={e => {
+                                                                        const newWaiters = [...(req.waiters || [0,0,0])];
+                                                                        newWaiters[index] = Math.min(req.personnel[index], Math.max(0, parseInt(e.target.value) || 0));
+                                                                        handleSaveRequirement({...req, waiters: newWaiters});
+                                                                    }}
+                                                                    className="w-12 text-center p-1 border rounded text-sm font-bold bg-white"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                        <button onClick={() => onDeleteRequirement(req.id)} className="text-slate-400 hover:text-rose-500 transition-colors p-2"><i className="fa-solid fa-trash"></i></button>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // EditShiftForm Component
+        const EditShiftForm = ({ employees, currentAssignments, onSave, date, getDefaultForShift }) => {
+            const [assignments, setAssignments] = useState([]);
+
+            useEffect(() => {
+                const defaultTimes = getDefaultForShift();
+                const initialState = employees.map(emp => {
+                    const existing = currentAssignments.find(a => a.name === emp.name);
+                    return {
+                        name: emp.name,
+                        onHoliday: emp.holidays.some(h => date >= h.start && date <= h.end),
+                        selected: !!existing,
+                        start: existing ? existing.start : defaultTimes.start,
+                        end: existing ? existing.end : defaultTimes.end
+                    };
+                });
+                setAssignments(initialState);
+            }, [employees, currentAssignments, date, getDefaultForShift]);
+
+            const handleAssignmentChange = (index, field, value) => {
+                const newAssignments = [...assignments];
+                newAssignments[index][field] = value;
+                setAssignments(newAssignments);
+            };
+
+            const handleSave = () => {
+                const selected = assignments
+                    .filter(a => a.selected)
+                    .map(({ name, start, end }) => ({ name, start, end }));
+                onSave(selected);
+            };
+
+            return (
+                <div className="flex flex-col h-full">
+                    <div className="bg-blue-50/50 p-4 rounded-lg mb-4 text-sm text-blue-800 border border-blue-100 flex items-start gap-3">
+                        <i className="fa-solid fa-info-circle mt-0.5"></i>
+                        <div>
+                            <p className="font-semibold">Gestione Rapida</p>
+                            <p className="text-blue-600">Seleziona i dipendenti per questo turno. Puoi modificare l'orario di ingresso e uscita direttamente qui.</p>
+                        </div>
+                    </div>
+                    <div className="flex-grow overflow-y-auto pr-2 space-y-2">
+                        {assignments.map((assign, index) => (
+                            <div key={assign.name} className={`p-3 rounded-lg border transition-all ${assign.selected ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-white border-slate-100 opacity-80 hover:opacity-100'} ${assign.onHoliday ? 'bg-slate-50 opacity-50 cursor-not-allowed' : ''}`}>
+                                <div className="flex items-center gap-4">
+                                    <label className="relative flex items-center p-2 rounded-full cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={assign.selected}
+                                            disabled={assign.onHoliday}
+                                            onChange={(e) => handleAssignmentChange(index, 'selected', e.target.checked)}
+                                            className="peer relative appearance-none w-5 h-5 border rounded-md border-slate-300 cursor-pointer transition-all checked:bg-indigo-600 checked:border-indigo-600"
+                                        />
+                                        <i className="fa-solid fa-check text-white absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-xs opacity-0 peer-checked:opacity-100 pointer-events-none"></i>
+                                    </label>
+                                    <div className="flex-grow">
+                                        <span className={`font-medium block ${assign.selected ? 'text-indigo-900' : 'text-slate-700'}`}>{assign.name}</span>
+                                        {assign.onHoliday && <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">In Ferie</span>}
+                                    </div>
+                                </div>
+                                {assign.selected && (
+                                    <div className="flex items-center gap-3 mt-3 pl-11 animate-fade-in">
+                                        <div className="flex-1">
+                                            <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Ingresso</label>
+                                            <input
+                                                type="time"
+                                                value={assign.start}
+                                                onChange={(e) => handleAssignmentChange(index, 'start', e.target.value)}
+                                                className="w-full p-1.5 bg-white border border-indigo-200 rounded text-sm text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            />
+                                        </div>
+                                        <span className="text-slate-300 mt-4"><i className="fa-solid fa-arrow-right"></i></span>
+                                        <div className="flex-1">
+                                            <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Uscita</label>
+                                            <input
+                                                type="time"
+                                                value={assign.end}
+                                                onChange={(e) => handleAssignmentChange(index, 'end', e.target.value)}
+                                                className="w-full p-1.5 bg-white border border-indigo-200 rounded text-sm text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ))}                    </div>
+                    <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end">
+                        <button onClick={handleSave} className="px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all">Conferma Assegnazioni</button>
+                    </div>
+                </div>
+            );
+        };
+
+        // ScheduleGrid Component
+        const ScheduleGrid = ({ bars, employees, requirements, roles, onArchive, schedule, setSchedule, month, setMonth, exportToExcel }) => {
+            const [alerts, setAlerts] = useState({});
+            const [isEditModalOpen, setEditModalOpen] = useState(false);
+            const [editCellData, setEditCellData] = useState(null);
+            const [viewMode, setViewMode] = useState('monthly');
+            const [selectedWeek, setSelectedWeek] = useState(() => {
+                const today = new Date();
+                const year = today.getFullYear();
+                const week = Math.ceil((((today.getTime() - new Date(year, 0, 1).getTime()) / 86400000) + new Date(year, 0, 1).getDay() + 1) / 7);
+                return `${year}-W${week.toString().padStart(2, '0')}`;
+            });
+
+            const getHoursDiff = (start, end) => {
+                if (!start || !end) return 0;
+                const d1 = new Date(`2000-01-01T${start}`);
+                const d2 = new Date(`2000-01-01T${end}`);
+                if (d2 <= d1) d2.setDate(d2.getDate() + 1);
+                const diff = (d2.getTime() - d1.getTime()) / 36e5;
+                return isNaN(diff) ? 0 : diff;
+            };
+
+            const getDatesForPeriod = useCallback(() => {
+                const dates = [];
+                if (viewMode === 'monthly') {
+                    if (!month) return [];
+                    const [year, m] = month.split('-').map(Number);
+                    if (isNaN(year) || isNaN(m)) return [];
+                    const daysInMonth = new Date(year, m, 0).getDate();
+                    for (let i = 1; i <= daysInMonth; i++) {
+                        dates.push(new Date(year, m - 1, i));
+                    }
+                } else {
+                    if (!selectedWeek) return [];
+                    const [year, week] = selectedWeek.split('-W').map(Number);
+                    if (isNaN(year) || isNaN(week)) return [];
+
+                    const d = new Date(Date.UTC(year, 0, 4));
+                    d.setUTCDate(d.getUTCDate() + (week - 1) * 7);
+                    const day = d.getUTCDay() || 7;
+                    d.setUTCDate(d.getUTCDate() - day + 1);
+                    for (let i = 0; i < 7; i++) {
+                        const dayDate = new Date(d);
+                        dayDate.setUTCDate(d.getUTCDate() + i);
+                        dates.push(dayDate);
+                    }
+                }
+                return dates;
+            }, [viewMode, month, selectedWeek]);
+
+            const getWeekOfYear = (d) => {
+                const date = new Date(d.getTime());
+                date.setHours(0, 0, 0, 0);
+                date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+                const week1 = new Date(date.getFullYear(), 0, 4);
+                return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+            };
+
+            const getDefaultForShift = useCallback((bar, shiftIndex) => {
+                if (bar.shiftDefinitions && bar.shiftDefinitions[shiftIndex]) {
+                    return {
+                        start: bar.shiftDefinitions[shiftIndex].start,
+                        end: bar.shiftDefinitions[shiftIndex].end
+                    };
+                }
+                
+                const shiftDurationMs = getHoursDiff(bar.openTime, bar.closeTime) / bar.shifts * 3600000;
+                const barOpenTimeMs = new Date(`1970-01-01T${bar.openTime}`).getTime();
+                const defaultStartMs = barOpenTimeMs + shiftIndex * shiftDurationMs;
+                const defaultEndMs = defaultStartMs + shiftDurationMs;
+                const formatTime = (date) => date.toTimeString().slice(0, 5);
+                return { start: formatTime(new Date(defaultStartMs)), end: formatTime(new Date(defaultEndMs)) };
+            }, []);
+
+            const calculateStressScore = (employee, date, shiftIndex, bar, stats, req, seniorRoleIds, currentAssignmentsInCell) => {
+                const dayName = DAYS_OF_WEEK[date.getDay() === 0 ? 6 : date.getDay() - 1];
+                const weekNum = getWeekOfYear(date);
+                
+                const shiftDef = getDefaultForShift(bar, shiftIndex);
+                const shiftHours = getHoursDiff(shiftDef.start, shiftDef.end);
+
+                if (employee.requiresPairing) {
+                    const needed = req.personnel[shiftIndex];
+                    if (currentAssignmentsInCell.length === needed - 1) { 
+                        const isSeniorPresent = currentAssignmentsInCell.some(e => {
+                           const emp = employees.find(empDef => empDef.name === e.name);
+                           return emp && seniorRoleIds.includes(emp.roleId || 0);
+                        });
+                        if (!isSeniorPresent) { return Infinity; }
+                    }
+                }
+                let score = stats[employee.id].hours;
+                
+                if (employee.restDay === dayName) score += 500;
+
+                const weeklyShifts = (stats[employee.id].weeklyShifts[weekNum] || 0);
+                if (weeklyShifts >= (7 - employee.restDaysPerWeek)) score += 500 * (weeklyShifts - (7 - employee.restDaysPerWeek) + 1);
+                const hoursProjection = (stats[employee.id].hours + shiftHours);
+                if (hoursProjection > employee.maxHours) score += (hoursProjection - employee.maxHours) * 10;
+                const pref = employee.preferences.find(p => p.day === dayName && p.shiftIndex === shiftIndex);
+                if (pref?.type === PreferenceType.PREFEERED) score -= 20;
+                if (pref?.type === PreferenceType.MANDATORY) score -= 10000;
+                
+                if (employee.preferredBarIds && employee.preferredBarIds.includes(bar.id)) {
+                    score -= 50; 
+                }
+
+                if (employee.requiresPairing) {
+                    const isSeniorPresent = currentAssignmentsInCell.some(e => {
+                        const emp = employees.find(empDef => empDef.name === e.name);
+                        return emp && seniorRoleIds.includes(emp.roleId || 0);
+                    });
+                    if (!isSeniorPresent) { score += 200; }
+                }
+                score += Math.random(); 
+                return score;
+            };
+
+            const generateSchedule = () => {
+                const dates = getDatesForPeriod();
+                if (!dates || dates.length === 0) { alert("Seleziona un periodo valido per generare la griglia."); return; }
+                const newSchedule = {};
+                const empStats = {};
+                employees.forEach(e => { empStats[e.id] = { hours: 0, weeklyShifts: {} }; });
+                const seniorRoleIds = roles.filter(r => r.name === 'Barman' || r.name === 'Manager').map(r => r.id);
+                const waiterRoleId = roles.find(r => r.name === 'Cameriere')?.id;
+
+                dates.forEach(date => {
+                    const isoDate = date.toISOString().split('T')[0];
+                    const dayName = DAYS_OF_WEEK[date.getDay() === 0 ? 6 : date.getDay() - 1];
+                    newSchedule[isoDate] = {};
+                    const assignedToday = new Set();
+                    bars.forEach(bar => {
+                        const isBarClosed = bar.closurePeriods?.some(p => isoDate >= p.start && isoDate <= p.end);
+                        if (bar.closedDay === dayName || isBarClosed) return;
+                        const req = requirements.find(r => r.barId === bar.id && r.day === dayName) || { id: 'default', barId: bar.id, day: dayName, personnel: bar.shifts === 2 ? [1, 1, 0] : [1, 1, 1], waiters: [0,0,0] };
+                        
+                        // Partial closure check
+                        const partialClosure = bar.partialClosures?.find(pc => pc.day === dayName);
+
+                        for (let shiftIndex = 0; shiftIndex < bar.shifts; shiftIndex++) {
+                            const cellKey = `${bar.id}-${shiftIndex}`;
+                            
+                            // Check if this specific shift is closed
+                            if (partialClosure && partialClosure.closedShiftIndexes.includes(shiftIndex)) {
+                                newSchedule[isoDate][cellKey] = [{ name: 'CHIUSO', start: '', end: '' }];
+                                continue;
+                            }
+
+                            const needed = req.personnel[shiftIndex];
+                            if (needed === 0) { newSchedule[isoDate][cellKey] = []; continue; }
+                            const waitersNeeded = req.waiters?.[shiftIndex] || 0;
+                            let assignedEmployees = [];
+                            
+                            // Updated isAvailable to check for Holidays
+                            const isAvailable = (emp) => {
+                                if (assignedEmployees.some(a => a.name === emp.name)) return false;
+                                if (assignedToday.has(emp.id)) return false;
+                                if (!emp.enabledBarIds.includes(bar.id)) return false;
+                                
+                                // Check for holidays
+                                if (emp.holidays && emp.holidays.some(h => isoDate >= h.start && isoDate <= h.end)) return false;
+
+                                if (emp.preferences.some(p => p.day === dayName && p.shiftIndex === shiftIndex && p.type === PreferenceType.UNAVAILABLE)) return false;
+                                if (emp.restDay === dayName) return false;
+                                return true;
+                            };
+
+                            for (let i = 0; i < needed; i++) {
+                                const waitersInShift = assignedEmployees.map(a => employees.find(e => e.name === a.name)).filter(e => e?.roleId === waiterRoleId).length;
+                                const seniorsInShift = assignedEmployees.map(a => employees.find(e => e.name === a.name)).filter(e => e && seniorRoleIds.includes(e.roleId || 0)).length;
+                                const needsWaiter = waitersInShift < waitersNeeded;
+                                const needsSenior = (waitersNeeded > 0 || assignedEmployees.some(a => employees.find(e=> e.name === a.name)?.requiresPairing)) && seniorsInShift === 0;
+                                let availableCandidates = employees.filter(isAvailable);
+                                let scoredCandidates = availableCandidates.map(emp => {
+                                    let score = calculateStressScore(emp, date, shiftIndex, bar, empStats, req, seniorRoleIds, assignedEmployees);
+                                    if (needsWaiter && emp.roleId !== waiterRoleId) { score += 10000; }
+                                    if (needsSenior && !seniorRoleIds.includes(emp.roleId || 0)) { score += 5000; }
+                                    return { employee: emp, score };
+                                }).filter(c => c.score < Infinity).sort((a,b) => a.score - b.score);
+                                let bestCandidate = scoredCandidates[0];
+                                if (bestCandidate) {
+                                    const winner = bestCandidate.employee;
+                                    const {start, end} = getDefaultForShift(bar, shiftIndex);
+                                    const assignment = { name: winner.name, start, end };
+                                    assignedEmployees.push(assignment);
+                                    assignedToday.add(winner.id);
+                                    const shiftHours = getHoursDiff(start, end);
+                                    empStats[winner.id].hours += shiftHours;
+                                    const weekNum = getWeekOfYear(date);
+                                    empStats[winner.id].weeklyShifts[weekNum] = (empStats[winner.id].weeklyShifts[weekNum] || 0) + 1;
+                                } else {
+                                    if (needsWaiter) { assignedEmployees.push({ name: 'CAMERIERE MANCANTE', start: '', end: '' }); } else { assignedEmployees.push({ name: 'SCOPERTO', start: '', end: '' }); }
+                                }
+                            }
+                            newSchedule[isoDate][cellKey] = assignedEmployees;
+                        }
+                    });
+                });
+                setSchedule(newSchedule);
+                runValidation(newSchedule);
+            };
+
+            const runValidation = useCallback((currentSchedule) => {
+                const newAlerts = {};
+                const empHours = {};
+                const seniorRoleIds = roles.filter(r => r.name === 'Barman' || r.name === 'Manager').map(r => r.id);
+                Object.entries(currentSchedule).forEach(([isoDate, daySchedule]) => {
+                    Object.entries(daySchedule).forEach(([cellKey, assignments]) => {
+                        const shiftEmployees = assignments.filter(a => a.name !== 'SCOPERTO' && a.name !== 'CAMERIERE MANCANTE' && a.name !== 'CHIUSO').map(a => employees.find(e => e.name === a.name)).filter(e => !!e);
+                        const juniorsInShift = shiftEmployees.filter(e => e.requiresPairing);
+                        if (juniorsInShift.length > 0) {
+                            const seniorsInShift = shiftEmployees.filter(e => seniorRoleIds.includes(e.roleId || 0));
+                            if (seniorsInShift.length === 0 && shiftEmployees.length > 1) { 
+                                juniorsInShift.forEach(junior => {
+                                    if (!newAlerts[junior.name]) newAlerts[junior.name] = [];
+                                    newAlerts[junior.name].push(`Affiancamento mancante il ${isoDate.split('-').reverse().join('/')}`);
+                                });
+                            }
+                        }
+                        assignments.forEach(assignment => {
+                             if(assignment.name !== 'SCOPERTO' && assignment.name !== 'CAMERIERE MANCANTE' && assignment.name !== 'CHIUSO') {
+                                const hours = getHoursDiff(assignment.start, assignment.end);
+                                empHours[assignment.name] = (empHours[assignment.name] || 0) + hours;
+                             }
+                        });
+                    });
+                });
+                employees.forEach(e => {
+                    if ((empHours[e.name] || 0) > e.maxHours) {
+                        if(!newAlerts[e.name]) newAlerts[e.name] = [];
+                        newAlerts[e.name].push(`Sforamento ore mensili (${(empHours[e.name]||0).toFixed(1)}/${e.maxHours})`);
+                    }
+                });
+                setAlerts(newAlerts);
+            }, [employees, roles]);
+
+            const handleSaveShift = (newAssignments) => {
+                if (editCellData) {
+                    const { date, barId, shiftIndex } = editCellData;
+                    const cellKey = `${barId}-${shiftIndex}`;
+                    const newSchedule = JSON.parse(JSON.stringify(schedule));
+                    if (!newSchedule[date]) newSchedule[date] = {};
+                    newSchedule[date][cellKey] = newAssignments;
+                    setSchedule(newSchedule);
+                    runValidation(newSchedule);
+                }
+                setEditModalOpen(false);
+                setEditCellData(null);
+            };
+
+            const handleArchive = () => {
+                const label = prompt("Etichetta per questo salvataggio:");
+                const period = viewMode === 'monthly' ? month : selectedWeek;
+                if (label && period) {
+                    const gridElement = document.getElementById('schedule-grid-container');
+                    if (gridElement) {
+                        onArchive(label, period, gridElement.innerHTML, schedule, bars);
+                    } else { alert("Impossibile trovare la griglia da archiviare."); }
+                }
+            };
+
+            const handleExportToExcel = () => {
+                const period = viewMode === 'monthly' ? month : selectedWeek;
+                if (Object.keys(schedule).length === 0) { alert("Nessuna griglia da esportare."); return; }
+                exportToExcel(period, schedule, bars, getDatesForPeriod());
+            }
+
+            const barColors = [
+                { bg: 'bg-blue-50', border: 'border-blue-500', text: 'text-blue-800' },
+                { bg: 'bg-emerald-50', border: 'border-emerald-500', text: 'text-emerald-800' },
+                { bg: 'bg-amber-50', border: 'border-amber-500', text: 'text-amber-800' },
+                { bg: 'bg-purple-50', border: 'border-purple-500', text: 'text-purple-800' },
+                { bg: 'bg-rose-50', border: 'border-rose-500', text: 'text-rose-800' },
+            ];
+
+            const renderedGrid = useMemo(() => {
+                const datesToRender = getDatesForPeriod();
+                if (datesToRender.length === 0) return <div className="text-center p-12 bg-white rounded-xl border border-dashed border-slate-300 text-slate-500"><i className="fa-solid fa-calendar mb-2 text-2xl"></i><p>Seleziona un periodo e genera la griglia.</p></div>;
+                if (Object.keys(schedule).length === 0) return <div className="text-center p-12 bg-white rounded-xl border border-dashed border-slate-300 text-slate-500"><i className="fa-solid fa-magic mb-2 text-2xl"></i><p>Clicca su "Genera Griglia" per iniziare.</p></div>;
+
+                const dayNames = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+                
+                return (
+                    <div id="schedule-grid-container" className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm bg-white">
+                        <table className="min-w-full text-sm border-collapse">
+                            <thead className="bg-slate-50 z-20 sticky top-0 shadow-sm">
+                                <tr>
+                                    <th className="p-3 border-b border-r border-slate-200 font-bold sticky left-0 bg-slate-50 z-30 text-slate-800 text-left min-w-[100px]">Data</th>
+                                    {bars.map((bar, idx) => {
+                                        const color = barColors[idx % barColors.length];
+                                        return <th key={bar.id} colSpan={bar.shifts} className={`p-3 border-b border-r border-slate-200 font-bold text-center ${color.bg} ${color.text} border-l-4 ${color.border}`}>{bar.name.toUpperCase()}</th>;
+                                    })}
+                                </tr>
+                                <tr>
+                                    <th className="p-2 border-b border-r border-slate-200 sticky left-0 bg-slate-50 z-30"></th>
+                                    {bars.flatMap((bar, idx) => {
+                                        const color = barColors[idx % barColors.length];
+                                        const shifts = bar.shifts === 2 ? ['Turno 1', 'Turno 2'] : ['Mattina', 'Pomeriggio', 'Sera'];
+                                        return shifts.slice(0, bar.shifts).map((s, sIdx) => 
+                                            <th key={`${bar.id}-${s}`} className={`p-2 border-b border-r border-slate-200 text-xs font-semibold text-slate-600 ${sIdx === 0 ? `border-l-4 ${color.border}` : ''}`}>{s}</th>
+                                        )
+                                    })}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {datesToRender.map((date, rIdx) => {
+                                    const isoDate = date.toISOString().split('T')[0];
+                                    const dayOfMonth = date.getDate();
+                                    const dayName = dayNames[date.getDay()];
+                                    const dayNameFull = DAYS_OF_WEEK[date.getDay() === 0 ? 6 : date.getDay() - 1];
+                                    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                                    
+                                    return (
+                                        <tr key={isoDate} className={`${rIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-slate-100 transition-colors`}>
+                                            <td className={`p-3 border-b border-r border-slate-200 text-center font-semibold sticky left-0 bg-white z-10 ${isWeekend ? 'text-indigo-600' : 'text-slate-700'}`}>
+                                                <div className="flex flex-col items-center">
+                                                    <span className="text-lg leading-none">{dayOfMonth}</span>
+                                                    <span className="text-[10px] uppercase tracking-wider">{dayName}</span>
+                                                </div>
+                                            </td>
+                                            {bars.flatMap((bar, idx) => {
+                                                const color = barColors[idx % barColors.length];
+                                                const isBarClosedOnDate = bar.closurePeriods?.some(p => isoDate >= p.start && isoDate <= p.end);
+                                                if (bar.closedDay === dayNameFull || isBarClosedOnDate) {
+                                                    return [<td key={bar.id} colSpan={bar.shifts} className={`p-2 border-b border-r border-slate-200 text-center bg-slate-100/80 text-slate-400 text-xs font-medium border-l-4 ${color.border}`}>CHIUSO</td>];
+                                                }
+                                                return Array.from({length: bar.shifts}).map((_, shiftIndex) => {
+                                                    const cellKey = `${bar.id}-${shiftIndex}`;
+                                                    const assignments = schedule[isoDate]?.[cellKey] || [];
+                                                    
+                                                    // Handle closed shift display
+                                                    if (assignments.length === 1 && assignments[0].name === 'CHIUSO') {
+                                                        return <td key={cellKey} className={`p-2 border-b border-r border-slate-200 text-center bg-slate-100/50 text-slate-400 text-[10px] font-medium border-l-4 ${shiftIndex === 0 ? color.border : 'border-slate-100'}`}>CHIUSO</td>
+                                                    }
+
+                                                    return (
+                                                        <td key={cellKey} className={`p-1 border-b border-r border-slate-200 align-top min-w-[140px] cursor-pointer hover:bg-white transition-colors ${shiftIndex === 0 ? `border-l-4 ${color.border}` : ''}`} onClick={() => { setEditCellData({ date: isoDate, barId: bar.id, shiftIndex }); setEditModalOpen(true); }}>
+                                                            {assignments.map((assignment, index) => {
+                                                                if (assignment.name === 'SCOPERTO') {
+                                                                    return <div key={`${assignment.name}-${index}`} className="text-[10px] p-1.5 rounded mb-1 bg-rose-500 text-white font-bold text-center shadow-sm">SCOPERTO</div>
+                                                                }
+                                                                if (assignment.name === 'CAMERIERE MANCANTE') {
+                                                                    return <div key={`${assignment.name}-${index}`} className="text-[10px] p-1.5 rounded mb-1 bg-amber-500 text-white font-bold text-center shadow-sm">CAM. MANCANTE</div>
+                                                                }
+                                                                const empAlerts = alerts[assignment.name] || [];
+                                                                const hasAlerts = empAlerts.length > 0;
+                                                                return (
+                                                                    <div key={`${assignment.name}-${index}`} className={`text-[11px] p-1.5 rounded mb-1 border shadow-sm transition-transform hover:scale-[1.02] ${hasAlerts ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-white border-slate-200 text-slate-700'}`}>
+                                                                        <div className="flex justify-between items-center mb-0.5">
+                                                                            <span className="font-bold truncate">{assignment.name}</span>
+                                                                            {hasAlerts && <i className="fa-solid fa-triangle-exclamation text-rose-500 ml-1" title={empAlerts.join('\\n')}></i>}
+                                                                        </div>
+                                                                        <div className="text-slate-500 text-center font-mono text-[9px] bg-slate-50 rounded px-1">{`${assignment.start}-${assignment.end}`}</div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </td>
+                                                    )
+                                                });
+                                            })}
+                                        </tr>
+                                    )
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+            }, [viewMode, month, selectedWeek, schedule, bars, alerts, getDatesForPeriod]);
+            
+            const barForModal = editCellData ? bars.find(b => b.id === editCellData.barId) : null;
+            const enabledEmpsForModal = editCellData ? employees.filter(e => e.enabledBarIds.includes(editCellData.barId)) : [];
+
+            return (
+                <div className="space-y-6 animate-fade-in">
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <div className="bg-slate-100 p-1 rounded-lg flex">
+                                <button onClick={() => setViewMode('monthly')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'monthly' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>Mensile</button>
+                                <button onClick={() => setViewMode('weekly')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'weekly' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>Settimanale</button>
+                            </div>
+                             {viewMode === 'monthly' ? (
+                                <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="p-1.5 border border-slate-300 rounded-md text-sm bg-white" />
+                            ) : (
+                                <input type="week" value={selectedWeek} onChange={(e) => setSelectedWeek(e.target.value)} className="p-1.5 border border-slate-300 rounded-md text-sm bg-white" />
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button onClick={generateSchedule} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 text-sm font-medium flex items-center gap-2 transition-transform hover:-translate-y-0.5">
+                                <i className="fa-solid fa-wand-magic-sparkles"></i> Genera
+                            </button>
+                             <button onClick={() => runValidation(schedule)} className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 shadow-lg shadow-amber-200 text-sm font-medium flex items-center gap-2 transition-transform hover:-translate-y-0.5">
+                                <i className="fa-solid fa-triangle-exclamation"></i> Verifica
+                            </button>
+                            <div className="h-6 w-px bg-slate-300 mx-1"></div>
+                            <button 
+                                onClick={handleArchive} 
+                                disabled={Object.keys(schedule).length === 0}
+                                className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 shadow-lg shadow-slate-300 text-sm font-medium flex items-center gap-2 transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <i className="fa-solid fa-box-archive"></i> Archivia
+                            </button>
+                            <button 
+                                onClick={handleExportToExcel} 
+                                disabled={Object.keys(schedule).length === 0}
+                                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 shadow-lg shadow-emerald-200 text-sm font-medium flex items-center gap-2 transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <i className="fa-solid fa-file-excel"></i> Export
+                            </button>
+                        </div>
+                    </div>
+                    {renderedGrid}
+                    {editCellData && barForModal && (
+                        <Modal
+                            isOpen={isEditModalOpen}
+                            onClose={() => setEditModalOpen(false)}
+                            title={`Gestione Turno: ${barForModal.name} - ${editCellData.date}`}
+                            size='lg'
+                        >
+                            <EditShiftForm 
+                                employees={enabledEmpsForModal} 
+                                currentAssignments={schedule[editCellData.date]?.[`${editCellData.barId}-${editCellData.shiftIndex}`] || []}
+                                onSave={handleSaveShift}
+                                date={editCellData.date}
+                                getDefaultForShift={() => getDefaultForShift(barForModal, editCellData.shiftIndex)}
+                            />
+                        </Modal>
+                    )}
+                </div>
+            );
+        };
+
+        // Reports Component
+        const Reports = ({ employees, archives }) => {
+            const [selectedArchive, setSelectedArchive] = useState(null);
+            const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'ascending' });
+            
+            const getHoursDiff = (start, end) => {
+                if (!start || !end) return 0;
+                const d1 = new Date(`2000-01-01T${start}`);
+                const d2 = new Date(`2000-01-01T${end}`);
+                if (d2 <= d1) d2.setDate(d2.getDate() + 1);
+                const diff = (d2.getTime() - d1.getTime()) / 36e5;
+                return isNaN(diff) ? 0 : diff;
+            };
+            
+            const sortedReportData = useMemo(() => {
+                if (!selectedArchive) return [];
+                const { scheduleData } = selectedArchive;
+                const empHours = {};
+                employees.forEach(e => empHours[e.name] = 0);
+                Object.values(scheduleData).forEach(daySchedule => {
+                    Object.values(daySchedule).forEach(assignments => {
+                        assignments.forEach(assignment => {
+                            if (assignment.name !== 'SCOPERTO' && assignment.name !== 'CAMERIERE MANCANTE' && assignment.name !== 'CHIUSO') {
+                                const hours = getHoursDiff(assignment.start, assignment.end);
+                                empHours[assignment.name] = (empHours[assignment.name] || 0) + hours;
+                            }
+                        });
+                    });
+                });
+                let sortableItems = employees.map(e => ({
+                    ...e,
+                    workedHours: empHours[e.name] || 0,
+                    difference: (empHours[e.name] || 0) - e.maxHours
+                }));
+                sortableItems.sort((a, b) => {
+                    if (a[sortConfig.key] < b[sortConfig.key]) { return sortConfig.direction === 'ascending' ? -1 : 1; }
+                    if (a[sortConfig.key] > b[sortConfig.key]) { return sortConfig.direction === 'ascending' ? 1 : -1; }
+                    return 0;
+                });
+                return sortableItems;
+            }, [selectedArchive, employees, sortConfig]);
+
+            const requestSort = (key) => {
+                let direction = 'ascending';
+                if (sortConfig.key === key && sortConfig.direction === 'ascending') { direction = 'descending'; }
+                setSortConfig({ key, direction });
+            };
+
+            const getSortIcon = (key) => {
+                if (sortConfig.key !== key) { return <i className="fa-solid fa-sort text-slate-300 ml-1"></i>; }
+                if (sortConfig.direction === 'ascending') { return <i className="fa-solid fa-sort-up text-indigo-500 ml-1"></i>; }
+                return <i className="fa-solid fa-sort-down text-indigo-500 ml-1"></i>;
+            };
+            
+             const TableHeader = ({ a_key, label }) => (
+                <th 
+                    className="p-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-50 transition-colors"
+                    onClick={() => requestSort(a_key)}
+                >
+                    {label} {getSortIcon(a_key)}
+                </th>
+            );
+
+             if (!selectedArchive) {
+                 return (
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 animate-fade-in">
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-3">
+                             <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600">
+                                <i className="fa-solid fa-chart-pie"></i>
+                            </div>
+                            Reportistica
+                        </h3>
+                        {archives.length === 0 ? (
+                            <div className="text-center p-12 bg-slate-50 rounded-lg border border-dashed border-slate-300">Nessun dato disponibile.</div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {archives.map(archive => (
+                                    <div key={archive.id} className="p-4 border border-slate-200 rounded-xl hover:shadow-md hover:border-purple-200 transition-all cursor-pointer bg-white group" onClick={() => setSelectedArchive(archive)}>
+                                        <div className="flex justify-between items-start mb-2">
+                                            <h5 className="font-bold text-slate-800 group-hover:text-purple-700">{archive.label}</h5>
+                                            <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500">{archive.date}</span>
+                                        </div>
+                                        <p className="text-sm text-slate-500 mb-4">Periodo: {archive.period}</p>
+                                        <button className="w-full py-2 bg-purple-50 text-purple-600 rounded-lg text-sm font-medium group-hover:bg-purple-600 group-hover:text-white transition-colors">Apri Report</button>
+                                    </div>
+                                ))}                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+            return (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
+                     <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                        <div>
+                             <h3 className="text-xl font-bold text-slate-800">{selectedArchive.label}</h3>
+                             <p className="text-sm text-slate-500">Periodo: {selectedArchive.period}</p>
+                        </div>
+                        <button onClick={() => setSelectedArchive(null)} className="px-4 py-2 bg-white border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 text-sm font-medium transition-colors">Torna all'elenco</button>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-100">
+                            <thead className="bg-white">
+                                <tr>
+                                    <TableHeader a_key='name' label='Nominativo' />
+                                    <TableHeader a_key='workedHours' label='Ore Lavorate' />
+                                    <TableHeader a_key='maxHours' label='Target' />
+                                    <TableHeader a_key='difference' label='Differenza' />
+                                    <th className="p-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Performance</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-slate-50">
+                                {sortedReportData.map((emp, idx) => {
+                                    const percentage = emp.maxHours > 0 ? (emp.workedHours / emp.maxHours) * 100 : 0;
+                                    const barColor = percentage > 100 ? 'bg-rose-500' : percentage > 85 ? 'bg-emerald-500' : 'bg-blue-500';
+                                    const diffColor = emp.difference > 0 ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold';
+                                    return (
+                                        <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
+                                            <td className="p-4 whitespace-nowrap font-medium text-slate-800">{emp.name}</td>
+                                            <td className="p-4 whitespace-nowrap text-slate-600">{emp.workedHours.toFixed(1)}h</td>
+                                            <td className="p-4 whitespace-nowrap text-slate-400">{emp.maxHours}h</td>
+                                            <td className={`p-4 whitespace-nowrap ${diffColor}`}>{emp.difference > 0 ? `+${emp.difference.toFixed(1)}` : emp.difference.toFixed(1)}h</td>
+                                            <td className="p-4 whitespace-nowrap align-middle">
+                                                <div className="w-48">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                                        <span>0%</span>
+                                                        <span>{percentage.toFixed(0)}%</span>
+                                                    </div>
+                                                    <div className="relative w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                                                        <div className={`${barColor} h-2 rounded-full transition-all duration-1000 ease-out`} style={{ width: `${Math.min(100, percentage)}%` }}></div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        // Archive Component
+        const Archive = ({ archives, onDelete, onExport }) => {
+            const [viewingArchive, setViewingArchive] = useState(null);
+            return (
+                <React.Fragment>
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 animate-fade-in">
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-white">
+                                <i className="fa-solid fa-archive"></i>
+                            </div>
+                            Archivio Storico
+                        </h3>
+                        {archives.length === 0 ? (
+                            <div className="text-center p-12 bg-slate-50 rounded-lg border border-dashed border-slate-300 text-slate-500">L'archivio è vuoto.</div>
+                        ) : (
+                            <div className="space-y-4">
+                                {archives.map(archive => (
+                                    <div key={archive.id} className="flex flex-col md:flex-row justify-between items-center p-4 border border-slate-200 rounded-xl hover:shadow-md transition-all bg-white">
+                                        <div className="mb-4 md:mb-0">
+                                            <p className="font-bold text-slate-800 text-lg">{archive.label}</p>
+                                            <div className="flex items-center gap-3 text-sm text-slate-500">
+                                                <span><i className="fa-regular fa-calendar mr-1"></i>{archive.period}</span>
+                                                <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                                                <span>Salvato il: {archive.date}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setViewingArchive(archive)} className="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium text-sm transition-colors">
+                                                <i className="fa-solid fa-eye mr-2"></i>Visualizza
+                                            </button>
+                                            <button onClick={() => onExport(archive)} className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 font-medium text-sm transition-colors">
+                                                <i className="fa-solid fa-file-excel mr-2"></i>Excel
+                                            </button>
+                                            <button onClick={() => onDelete(archive.id)} className="px-4 py-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 font-medium text-sm transition-colors">
+                                                <i className="fa-solid fa-trash mr-2"></i>Elimina
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <Modal isOpen={!!viewingArchive} onClose={() => setViewingArchive(null)} title={`Anteprima: ${viewingArchive?.label}`} size="full">
+                        {viewingArchive && <div className="p-4 overflow-auto" dangerouslySetInnerHTML={{ __html: viewingArchive.html }} />}
+                    </Modal>
+                </React.Fragment>
+            );
+        };
+
+        // App Component
+        const App = () => {
+            const [companyName, setCompanyName] = useLocalStorage('app_company_name', 'Nome Azienda');
+            const [activeTab, setActiveTab] = useState('bars');
+            const [bars, setBars] = useLocalStorage('echoes_bars', []);
+            const [employees, setEmployees] = useLocalStorage('echoes_employees', []);
+            const [roles, setRoles] = useLocalStorage('echoes_roles', [{id: 1, name: 'Cameriere'}, {id: 2, name: 'Barman'}, {id: 3, name: 'Manager'}, {id: 4, name: 'Cuoco'}]);
+            const [requirements, setRequirements] = useLocalStorage('echoes_reqs', []);
+            const [archives, setArchives] = useLocalStorage('echoes_archives', []);
+            const [schedule, setSchedule] = useLocalStorage('echoes_schedule', {});
+            const [scheduleMonth, setScheduleMonth] = useLocalStorage('echoes_schedule_month', new Date().toISOString().slice(0, 7));
+
+
+            const exportScheduleToExcel = (period, scheduleData, barsData, datesToExport) => {
+                const dayNames = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+                const header1 = ['Data'];
+                const header2 = [''];
+                const merges = [];
+                let currentCol = 1;
+
+                // Build Headers with visual separation
+                barsData.forEach(bar => {
+                    header1.push(bar.name);
+                    for (let i = 1; i < bar.shifts; i++) header1.push(''); 
+                    
+                    merges.push({ s: { r: 0, c: currentCol }, e: { r: 0, c: currentCol + bar.shifts - 1 } });
+                    
+                    const shifts = bar.shifts === 2 ? ['Turno 1', 'Turno 2'] : ['Mattina', 'Pomeriggio', 'Sera'];
+                    header2.push(...shifts.slice(0, bar.shifts));
+                    
+                    header1.push(''); 
+                    header2.push('');
+                    currentCol += bar.shifts + 1;
+                });
+
+                const data = [header1, header2];
+
+                // Data Rows
+                datesToExport.forEach(date => {
+                    const isoDate = date.toISOString().split('T')[0];
+                    const dayOfMonth = date.getDate();
+                    const dayName = dayNames[date.getDay()];
+                    const row = [`${dayOfMonth} ${dayName}`];
+                    let currentCell = 1;
+
+                    barsData.forEach(bar => {
+                        const dayNameFull = DAYS_OF_WEEK[date.getDay() === 0 ? 6 : date.getDay() - 1];
+                        const isBarClosedOnDate = bar.closurePeriods?.some(p => isoDate >= p.start && isoDate <= p.end);
+                        const isClosedDay = bar.closedDay === dayNameFull;
+
+                        if (isClosedDay || isBarClosedOnDate) {
+                            row.push('CHIUSO');
+                            for (let i = 1; i < bar.shifts; i++) row.push('');
+                            if (bar.shifts > 1) {
+                                merges.push({ s: { r: data.length, c: currentCell }, e: { r: data.length, c: currentCell + bar.shifts - 1 } });
+                            }
+                        } else {
+                            for (let shiftIndex = 0; shiftIndex < bar.shifts; shiftIndex++) {
+                                const cellKey = `${bar.id}-${shiftIndex}`;
+                                const assignments = scheduleData[isoDate]?.[cellKey] || [];
+                                
+                                // Handle partial closure for Excel
+                                if (assignments.length === 1 && assignments[0].name === 'CHIUSO') {
+                                    row.push('CHIUSO');
+                                } else {
+                                    const cellText = assignments.map(a => {
+                                        if (a.name === 'SCOPERTO' || a.name === 'CAMERIERE MANCANTE') return a.name;
+                                        return `${a.name} (${a.start}-${a.end})`;
+                                    }).join('\n');
+                                    row.push(cellText);
+                                }
+                            }
+                        }
+                        row.push('');
+                        currentCell += bar.shifts + 1;
+                    });
+                    data.push(row);
+                });
+
+                const ws = XLSX.utils.aoa_to_sheet(data);
+                ws['!merges'] = merges;
+                const colWidths = [{ wch: 15 }]; 
+                barsData.forEach(bar => {
+                    for(let i=0; i<bar.shifts; i++) colWidths.push({ wch: 20 });
+                    colWidths.push({ wch: 2 });
+                });
+                ws['!cols'] = colWidths;
+
+                const summaryHeader = ['Dipendente', 'Ore Totali', 'Target Mensile', 'Differenza'];
+                const summaryData = [summaryHeader];
+                
+                const empHours = {};
+                employees.forEach(e => empHours[e.name] = 0);
+                
+                const getHDiff = (s, e) => {
+                    if(!s||!e) return 0;
+                    const d1=new Date(`2000-01-01T${s}`);
+                    const d2=new Date(`2000-01-01T${e}`);
+                    if(d2<=d1) d2.setDate(d2.getDate()+1);
+                    return (d2.getTime()-d1.getTime())/36e5;
+                };
+
+                Object.values(scheduleData).forEach(daySchedule => {
+                        Object.values(daySchedule).forEach(assignments => {
+                            assignments.forEach(a => {
+                                if(a.name !== 'SCOPERTO' && a.name !== 'CAMERIERE MANCANTE' && a.name !== 'CHIUSO') {
+                                    empHours[a.name] = (empHours[a.name] || 0) + getHDiff(a.start, a.end);
+                                }
+                            })
+                        })
+                });
+
+                employees.forEach(emp => {
+                    const total = empHours[emp.name] || 0;
+                    const diff = total - emp.maxHours;
+                    summaryData.push([emp.name, total.toFixed(2), emp.maxHours, diff.toFixed(2)]);
+                });
+
+                const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+                wsSummary['!cols'] = [{wch: 25}, {wch: 15}, {wch: 15}, {wch: 15}];
+
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Turni Dettagliati');
+                XLSX.utils.book_append_sheet(wb, wsSummary, 'Riepilogo Ore');
+                XLSX.writeFile(wb, `Turni_${period.replace('-', '_')}.xlsx`);
+            };
+
+            const handleExportArchive = (archive) => {
+                const { period, scheduleData, barsData } = archive;
+                const isMonthly = !period.includes('-W');
+                const dates = [];
+                if (isMonthly) {
+                    const [year, m] = period.split('-').map(Number);
+                    const daysInMonth = new Date(year, m, 0).getDate();
+                    for (let i = 1; i <= daysInMonth; i++) dates.push(new Date(year, m - 1, i));
+                } else {
+                    const [year, week] = period.split('-W').map(Number);
+                    const d = new Date(Date.UTC(year, 0, 4));
+                    d.setUTCDate(d.getUTCDate() + (week - 1) * 7);
+                    const day = d.getUTCDay() || 7;
+                    d.setUTCDate(d.getUTCDate() - day + 1);
+                    for (let i = 0; i < 7; i++) {
+                        const dayDate = new Date(d);
+                        dayDate.setUTCDate(d.getUTCDate() + i);
+                        dates.push(dayDate);
+                    }
+                }
+                exportScheduleToExcel(period, scheduleData, barsData, dates);
+            };
+            
+            const handleSaveBar = useCallback((barData) => { setBars(prev => { if (barData.id) { return prev.map(b => b.id === barData.id ? {...b, ...barData} : b); } return [...prev, { ...barData, id: Date.now() }]; }); }, [setBars]);
+            const handleDeleteBar = useCallback((id) => { if (window.confirm("Sei sicuro di voler eliminare questo locale?")) { setBars(prev => prev.filter(b => b.id !== id)); } }, [setBars]);
+            const handleSaveEmployee = useCallback((empData) => { setEmployees(prev => { if (empData.id) { return prev.map(e => e.id === empData.id ? {...e, ...empData} : e); } return [...prev, { ...empData, id: Date.now() }]; }); }, [setEmployees]);
+            const handleDeleteEmployee = useCallback((id) => { if (window.confirm("Sei sicuro di voler eliminare questo dipendente?")) { setEmployees(prev => prev.filter(e => e.id !== id)); } }, [setEmployees]);
+            const handleSaveRequirement = useCallback((reqData) => { setRequirements(prev => { const index = prev.findIndex(r => r.id === reqData.id); if (index > -1) { const newReqs = [...prev]; newReqs[index] = reqData; return newReqs; } return [...prev, reqData]; }); }, [setRequirements]);
+            const handleDeleteRequirement = useCallback((id) => { if(window.confirm("Sei sicuro di voler eliminare questa configurazione?")) { setRequirements(prev => prev.filter(r => r.id !== id)); } }, [setRequirements]);
+            const handleArchiveSchedule = useCallback((label, period, html, scheduleData, barsData) => { const newArchive = { id: Date.now(), label, period, html, scheduleData, barsData, date: new Date().toLocaleDateString('it-IT') }; setArchives(prev => [newArchive, ...prev]); alert(`Griglia "${label}" archiviata con successo!`); }, [setArchives]);
+            const handleDeleteArchive = useCallback((id) => { if(window.confirm("Sei sicuro di voler eliminare questo archivio?")) { setArchives(prev => prev.filter(a => a.id !== id)); } }, [setArchives]);
+
+            
+            const tabs = [
+                { id: 'bars', label: 'Locali', icon: 'fa-store' },
+                { id: 'employees', label: 'Dipendenti', icon: 'fa-users' },
+                { id: 'config', label: 'Configurazione', icon: 'fa-sliders' },
+                { id: 'schedule', label: 'Turni & Griglia', icon: 'fa-calendar-alt' },
+                { id: 'reports', label: 'Report', icon: 'fa-chart-pie' },
+                { id: 'archive', label: 'Archivio', icon: 'fa-archive' },
+                { id: 'settings', label: 'Impostazioni', icon: 'fa-cog' },
+            ];
+            
+            return (
+                <div className="flex h-screen bg-slate-50">
+                    <aside className="hidden md:flex flex-col w-64 bg-slate-900 text-white h-full shadow-xl z-20">
+                        <div className="p-6 border-b border-slate-800 flex items-center gap-3">
+                            <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/50">
+                                <i className="fa-solid fa-layer-group text-xl"></i>
+                            </div>
+                            <div>
+                                <h1 className="font-bold text-lg leading-none truncate w-32">{companyName}</h1>
+                                <span className="text-[10px] text-slate-400 uppercase tracking-widest">Shift Manager Pro</span>
+                            </div>
+                        </div>
+                        <nav className="flex-grow p-4 space-y-2 overflow-y-auto">
+                            {tabs.map(tab => (
+                                <button 
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+                                        activeTab === tab.id 
+                                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/20' 
+                                        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                                    }`}
+                                >
+                                    <i className={`fa-solid ${tab.icon} w-5`}></i>
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </nav>
+                    </aside>
+                    
+                    <div className="flex-1 flex flex-col h-full overflow-hidden">
+                        <header className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center z-20 shadow-md">
+                                <div className="flex items-center gap-2">
+                                <i className="fa-solid fa-layer-group text-indigo-500"></i>
+                                <span className="font-bold truncate">{companyName}</span>
+                            </div>
+                        </header>
+                        <nav className="md:hidden flex overflow-x-auto bg-slate-800 text-slate-300 p-2 gap-2 shadow-inner shrink-0">
+                                {tabs.map(tab => (
+                                <button 
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex-shrink-0 px-3 py-2 rounded-md text-xs font-medium whitespace-nowrap ${
+                                        activeTab === tab.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-700'
+                                    }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </nav>
+
+                        <main className="flex-1 overflow-auto p-4 md:p-8 relative">
+                                <div className="max-w-7xl mx-auto">
+                                <div className="mb-6 flex justify-between items-end">
+                                    <h2 className="text-2xl font-bold text-slate-800">{tabs.find(t => t.id === activeTab)?.label}</h2>
+                                    <span className="text-xs text-slate-400 hidden md:block">{new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                                </div>
+                                {activeTab === 'bars' && <Bars bars={bars} onSave={handleSaveBar} onDelete={handleDeleteBar} />}
+                                {activeTab === 'employees' && <Employees employees={employees} bars={bars} roles={roles} onSave={handleSaveEmployee} onDelete={handleDeleteEmployee} />}
+                                {activeTab === 'config' && <Configuration requirements={requirements} bars={bars} onSaveRequirement={handleSaveRequirement} onDeleteRequirement={handleDeleteRequirement} />}
+                                {activeTab === 'schedule' && <ScheduleGrid bars={bars} employees={employees} requirements={requirements} roles={roles} onArchive={handleArchiveSchedule} schedule={schedule} setSchedule={setSchedule} month={scheduleMonth} setMonth={setScheduleMonth} exportToExcel={exportScheduleToExcel} />}
+                                {activeTab === 'reports' && <Reports employees={employees} archives={archives} />}
+                                {activeTab === 'archive' && <Archive archives={archives} onDelete={handleDeleteArchive} onExport={handleExportArchive} />}
+                                {activeTab === 'settings' && <Settings companyName={companyName} setCompanyName={setCompanyName} />}
+                            </div>
+                        </main>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+```
